@@ -36,7 +36,6 @@ from scorch.snapshot import (
     continuity_check,
     continuity_rows,
     describe_baseline,
-    exchange_day,
     load_baseline,
     log_continuity,
     publish_snapshot,
@@ -210,10 +209,6 @@ def validate_instruments(payload: bytes) -> tuple[InstrumentInfo, PopulationInfo
     return info, population
 
 
-def default_out_dir(now: datetime | None = None) -> Path:
-    return Path("data/kite") / exchange_day(now)
-
-
 def build_manifest(
     book: dict[str, Any],
     now: datetime | None = None,
@@ -230,11 +225,9 @@ def build_manifest(
     )
 
 
-def download_instruments(
-    out_dir: Path | None = None, now: datetime | None = None
-) -> Path:
+def download_instruments(out_dir: Path, now: datetime | None = None) -> Path:
     """Download the Kite instrument dump and publish the normalized book."""
-    target = out_dir if out_dir is not None else default_out_dir(now)
+    target = out_dir
     logger.info("GET %s", INSTRUMENTS_URL)
     started = time.perf_counter()
     stored = csv_bytes(fetch_bytes(INSTRUMENTS_URL))

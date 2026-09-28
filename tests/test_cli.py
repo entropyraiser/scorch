@@ -74,6 +74,11 @@ def test_missing_broker_exits() -> None:
         main(["download-symbols"])
 
 
+def test_missing_out_exits() -> None:
+    with pytest.raises(SystemExit):
+        main(["download-symbols", "--broker", "firstock"])
+
+
 def test_download_symbols_reports_oserror(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -18,7 +18,6 @@ from scorch.firstock.symbols import (
     SEGMENTS,
     DownloadError,
     build_manifest,
-    default_out_dir,
     download_all,
     download_symbols,
     fetch_bytes,
@@ -207,14 +206,6 @@ def test_atomic_write_replaces(tmp_path: Path) -> None:
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_default_out_dir_uses_india_calendar_day() -> None:
-    # 20:00 UTC is 01:30 the next morning in Asia/Kolkata.
-    late = datetime(2026, 8, 30, 20, 0, tzinfo=UTC)
-    assert default_out_dir(late) == Path("data/firstock/2026-08-31")
-    afternoon = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
-    assert default_out_dir(afternoon) == Path("data/firstock/2026-08-30")
-
-
 def test_build_manifest() -> None:
     now = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
     header = list(SEGMENTS["NSE"]["header"])
@@ -308,22 +299,6 @@ def test_failed_segment_keeps_previous_snapshot(
     assert json.loads((tmp_path / "manifest.json").read_text()) == {"old": True}
     assert not (tmp_path / "BSE_symbols.csv").exists()
     assert not (tmp_path.with_name(tmp_path.name + ".partial")).exists()
-
-
-def test_download_symbols_uses_default_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        "scorch.firstock.symbols.default_out_dir", lambda now=None: tmp_path / "dated"
-    )
-    payloads = _segment_payloads()
-    monkeypatch.setattr(
-        "scorch.firstock.symbols.fetch_bytes",
-        lambda url: payloads[url.split("/")[-1].split("?")[0]],
-    )
-    out = download_symbols()
-    assert out == tmp_path / "dated"
-    assert (out / "manifest.json").exists()
 
 
 def test_fetch_bytes_retries_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -494,8 +469,8 @@ def test_first_publish_of_a_day_compares_with_yesterday(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _shrink_min_rows(monkeypatch)
-    day = tmp_path / "2026-09-28"
-    previous = tmp_path / "2026-09-27"
+    day = tmp_path / "20260928"
+    previous = tmp_path / "20260927"
     previous.mkdir()
     (previous / "manifest.json").write_text(
         json.dumps(_baseline_manifest(rows=4, nfo_overlap=2, bfo_overlap=2))
@@ -511,12 +486,12 @@ def test_same_day_baseline_wins_over_yesterday(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _shrink_min_rows(monkeypatch)
-    day = tmp_path / "2026-09-28"
+    day = tmp_path / "20260928"
     day.mkdir()
     (day / "manifest.json").write_text(
         json.dumps(_baseline_manifest(rows=4, nfo_overlap=2, bfo_overlap=2))
     )
-    previous = tmp_path / "2026-09-27"
+    previous = tmp_path / "20260927"
     previous.mkdir()
     (previous / "manifest.json").write_text(
         json.dumps(_baseline_manifest(rows=400, nfo_overlap=200, bfo_overlap=200))

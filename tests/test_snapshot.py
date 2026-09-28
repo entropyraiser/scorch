@@ -163,10 +163,10 @@ def test_overlap_continuity_rejects_a_large_move() -> None:
 
 
 def test_load_baseline_prefers_same_directory_over_yesterday(tmp_path: Path) -> None:
-    day = tmp_path / "2026-03-01"
+    day = tmp_path / "20260301"
     day.mkdir()
     (day / "manifest.json").write_text(json.dumps({"segments": [{"segment": "NSE"}]}))
-    previous = tmp_path / "2026-02-28"
+    previous = tmp_path / "20260228"
     previous.mkdir()
     (previous / "manifest.json").write_text(json.dumps({"from": "yesterday"}))
     source, body = load_baseline(day)
@@ -178,8 +178,8 @@ def test_load_baseline_prefers_same_directory_over_yesterday(tmp_path: Path) -> 
 
 
 def test_load_baseline_reads_previous_calendar_day(tmp_path: Path) -> None:
-    day = tmp_path / "2026-03-01"
-    previous = tmp_path / "2026-02-28"
+    day = tmp_path / "20260301"
+    previous = tmp_path / "20260228"
     previous.mkdir()
     (previous / "manifest.json").write_text(json.dumps({"from": "yesterday"}))
     source, body = load_baseline(day)

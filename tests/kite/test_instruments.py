@@ -21,7 +21,6 @@ from scorch.kite.instruments import (
     DownloadError,
     build_manifest,
     csv_bytes,
-    default_out_dir,
     download_instruments,
     fetch_bytes,
     parse_csv,
@@ -176,13 +175,6 @@ def test_atomic_write_replaces(tmp_path: Path) -> None:
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_default_out_dir_uses_india_calendar_day() -> None:
-    late = datetime(2026, 8, 30, 20, 0, tzinfo=UTC)
-    assert default_out_dir(late) == Path("data/kite/2026-08-31")
-    afternoon = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
-    assert default_out_dir(afternoon) == Path("data/kite/2026-08-30")
-
-
 def test_build_manifest() -> None:
     now = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
     book = build_book(rows_from_kite(_csv_bytes(list(HEADER), 2)))
@@ -238,21 +230,6 @@ def test_failed_download_keeps_previous_snapshot(
         download_instruments(tmp_path)
     assert (tmp_path / "instruments.csv").read_bytes() == b"old"
     assert (tmp_path / "manifest.json").read_bytes() == b'{"old": true}'
-
-
-def test_download_instruments_uses_default_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("scorch.kite.instruments.MIN_ROWS", 2)
-    monkeypatch.setattr(
-        "scorch.kite.instruments.default_out_dir",
-        lambda now=None: tmp_path / "dated",
-    )
-    payload = _csv_bytes(list(HEADER), 2)
-    monkeypatch.setattr("scorch.kite.instruments.fetch_bytes", lambda url: payload)
-    out = download_instruments()
-    assert out == tmp_path / "dated"
-    assert (out / "manifest.json").exists()
 
 
 def test_fetch_bytes_sends_version_without_credentials(

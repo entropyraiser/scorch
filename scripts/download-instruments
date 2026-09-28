@@ -1,0 +1,23 @@
+#!/bin/sh
+# Usage: download-instruments <directory>
+# Writes <directory>/<broker>/YYYYMMDD for Firstock and Kite.
+# A failed broker leaves that broker's previous snapshot in place.
+set -eu
+if [ "$#" -ne 1 ] || [ -z "$1" ]; then
+  echo "usage: download-instruments <directory>" >&2
+  exit 2
+fi
+out_root=$1
+repo=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+day=$(TZ=Asia/Kolkata date +%Y%m%d)
+log=$out_root/download.log
+mkdir -p "$out_root"
+umask 022
+status=0
+{
+  echo "$(date '+%Y-%m-%d %H:%M:%S %Z') start"
+  "$repo/.venv/bin/scorch" download-symbols --broker firstock --out "$out_root/firstock/$day" || status=1
+  "$repo/.venv/bin/scorch" download-symbols --broker kite --out "$out_root/kite/$day" || status=1
+  echo "$(date '+%Y-%m-%d %H:%M:%S %Z') done status=$status"
+} >>"$log" 2>&1
+exit "$status"

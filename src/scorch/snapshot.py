@@ -31,7 +31,7 @@ MAX_RELATIVE_CHANGE_BP = 4000
 
 logger = logging.getLogger(__name__)
 
-_DATE_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DATE_NAME = re.compile(r"^\d{8}$")
 
 
 class DownloadError(RuntimeError):
@@ -140,6 +140,15 @@ def publish_snapshot(
             shutil.rmtree(backup)
 
 
+def _directory_day(name: str) -> datetime | None:
+    if not _DATE_NAME.fullmatch(name):
+        return None
+    try:
+        return datetime.strptime(name, "%Y%m%d")
+    except ValueError:
+        return None
+
+
 def _read_manifest(path: Path) -> dict[str, Any]:
     try:
         text = path.read_text(encoding="utf-8")
@@ -165,9 +174,10 @@ def load_baseline(target: Path) -> tuple[str | None, dict[str, Any] | None]:
     own = target / "manifest.json"
     if own.is_file():
         return "same_directory", _read_manifest(own)
-    if _DATE_NAME.fullmatch(target.name):
-        day = datetime.strptime(target.name, "%Y-%m-%d").date()
-        sibling = target.with_name((day - timedelta(days=1)).isoformat())
+    parsed = _directory_day(target.name)
+    if parsed is not None:
+        day = parsed.date()
+        sibling = target.with_name((day - timedelta(days=1)).strftime("%Y%m%d"))
         previous = sibling / "manifest.json"
         if previous.is_file():
             return "previous_day", _read_manifest(previous)
@@ -348,8 +358,9 @@ def describe_baseline(
     if source is None:
         return None
     calendar_day = None
-    if _DATE_NAME.fullmatch(target.name):
-        day = datetime.strptime(target.name, "%Y-%m-%d").date()
+    parsed = _directory_day(target.name)
+    if parsed is not None:
+        day = parsed.date()
         if source == "previous_day":
             calendar_day = (day - timedelta(days=1)).isoformat()
         elif source == "same_directory":

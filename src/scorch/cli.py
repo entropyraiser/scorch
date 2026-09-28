@@ -35,8 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
     download.add_argument(
         "--out",
         type=Path,
-        default=None,
-        help="Output directory (default: data/<broker>/<Asia/Kolkata date>).",
+        required=True,
+        help="Directory to write. The directory name should be YYYYMMDD.",
     )
     return parser
 

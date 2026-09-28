@@ -31,7 +31,6 @@ from scorch.snapshot import (
     continuity_check,
     continuity_rows,
     describe_baseline,
-    exchange_day,
     load_baseline,
     log_continuity,
     overlap_continuity,
@@ -316,10 +315,6 @@ def require_indices_coverage(coverage: IndicesCoverage) -> None:
         )
 
 
-def default_out_dir(now: datetime | None = None) -> Path:
-    return Path("data/firstock") / exchange_day(now)
-
-
 def build_manifest(
     book: dict[str, Any],
     overlaps: list[OverlapInfo],
@@ -408,8 +403,7 @@ def download_all(out_dir: Path, now: datetime | None = None) -> list[SegmentInfo
     return manifest
 
 
-def download_symbols(out_dir: Path | None = None, now: datetime | None = None) -> Path:
-    """Download all symbol segments and write a dated manifest."""
-    target = out_dir if out_dir is not None else default_out_dir(now)
-    download_all(target, now=now)
-    return target
+def download_symbols(out_dir: Path, now: datetime | None = None) -> Path:
+    """Download all symbol segments and write them under `out_dir`."""
+    download_all(out_dir, now=now)
+    return out_dir
