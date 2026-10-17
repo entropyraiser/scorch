@@ -6,8 +6,9 @@ so last_price is not a live quote.
 Docs: https://kite.trade/docs/connect/v3/market-quotes/
 
 One file covers every exchange (NSE, BSE, NFO, BFO, MCX, CDS, NCO, and
-smaller lists such as GLOBAL and NSEIX). Currency rows on CDS and BCD
-are left out of the book, because their prices are finer than one paisa.
+smaller lists such as GLOBAL and NSEIX). Exchanges listed in the universe
+file are written. The others are left out. Currency stays out while a price
+must be a whole number of paise.
 Index rows use segment INDICES inside this file; there is no separate
 indices download. The published snapshot is the normalized instruments.csv.
 last_price is checked on the vendor row and is not written. Kite's own
@@ -40,15 +41,18 @@ from scorch.snapshot import (
     log_continuity,
     publish_snapshot,
 )
+from scorch.universe import universe
 
 INSTRUMENTS_URL = "https://api.kite.trade/instruments"
 USER_AGENT = f"scorch-kite-instrument-downloader/{__version__}"
-TIMEOUT_SECONDS = 60
-RETRIES = 3
-RETRY_BACKOFF_SECONDS = 2.0
+_HTTP = universe().http
+TIMEOUT_SECONDS = _HTTP.timeout_seconds
+RETRIES = _HTTP.retries
+RETRY_BACKOFF_SECONDS = _HTTP.retry_backoff_seconds
 
-# Sanity floor near half of the 2026-09-28 dump (~110,000 rows).
-MIN_ROWS = 50_000
+# Sanity floor from the universe file. Tests lower this copy.
+_kite = universe().brokers.get("kite")
+MIN_ROWS = 1 if _kite is None or _kite.min_rows is None else _kite.min_rows
 NUMERIC_COLUMNS = ("last_price", "strike", "tick_size", "lot_size")
 
 logger = logging.getLogger(__name__)
@@ -232,7 +236,10 @@ def download_instruments(out_dir: Path, now: datetime | None = None) -> Path:
     started = time.perf_counter()
     stored = csv_bytes(fetch_bytes(INSTRUMENTS_URL))
     validate_instruments(stored)
-    book = build_book(rows_from_kite(stored))
+    book = build_book(
+        rows_from_kite(stored),
+        omit_without_spot=universe().brokers["kite"].omit_without_spot,
+    )
     duration_ms = round((time.perf_counter() - started) * 1000)
     logger.info(
         "instruments.csv: %s rows, %s bytes, %sms",

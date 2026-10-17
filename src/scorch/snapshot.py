@@ -21,13 +21,9 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-EXCHANGE_TZ = ZoneInfo("Asia/Kolkata")
-MANIFEST_SCHEMA_VERSION = 3
-# Firstock published the Indices file beside the other segments. The normalized
-# book omits it, because those rows repeat NFO and BFO.
-_RETIRED_SEGMENTS = frozenset({"Indices"})
-# 40.00% — integer basis points so the boundary does not depend on binary floats.
-MAX_RELATIVE_CHANGE_BP = 4000
+from scorch.universe import universe
+
+MANIFEST_SCHEMA_VERSION = 5
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +34,22 @@ class DownloadError(RuntimeError):
     """A download failed validation or the HTTP GET failed after retries."""
 
 
+def exchange_zone() -> ZoneInfo:
+    """Session timezone named in the universe file."""
+    return ZoneInfo(universe().timezone)
+
+
 def exchange_day(now: datetime | None = None) -> str:
-    """Calendar day in India, which is the NSE/BSE session date."""
+    """Calendar day in the session timezone."""
     moment = now or datetime.now(UTC)
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=UTC)
-    return moment.astimezone(EXCHANGE_TZ).strftime("%Y-%m-%d")
+    return moment.astimezone(exchange_zone()).strftime("%Y-%m-%d")
+
+
+def session_stamp(now: datetime | None = None) -> str:
+    """Session date as YYYYMMDD, the snapshot directory name."""
+    return exchange_day(now).replace("-", "")
 
 
 def _fsync_dir(path: Path) -> None:
@@ -203,10 +209,15 @@ def _segment_rows(manifest: Mapping[str, Any]) -> dict[str, int]:
     return rows
 
 
+def _change_limit_bp() -> int:
+    # Integer basis points so the boundary does not depend on binary floats.
+    return universe().continuity.max_relative_change_bp
+
+
 def _exceeds(previous: int, current: int) -> bool:
     if previous <= 0:
         return current != previous
-    return abs(current - previous) * 10000 > previous * MAX_RELATIVE_CHANGE_BP
+    return abs(current - previous) * 10000 > previous * _change_limit_bp()
 
 
 def _signed_change(previous: int, current: int) -> float:
@@ -216,7 +227,7 @@ def _signed_change(previous: int, current: int) -> float:
 
 
 def _limit_text() -> str:
-    return f"±{MAX_RELATIVE_CHANGE_BP / 100:.0f}%"
+    return f"±{_change_limit_bp() / 100:.0f}%"
 
 
 def continuity_check(
@@ -267,8 +278,8 @@ def continuity_rows(
     previous = _segment_rows(baseline)
     if set(previous) == {"ALL"}:
         return dict(baseline), {"ALL": total_rows}
-    retired = previous.keys() & _RETIRED_SEGMENTS
-    if not retired:
+    retired = universe().continuity.retired_segments
+    if not (previous.keys() & retired):
         return dict(baseline), dict(exchange_rows)
     segments = baseline.get("segments")
     kept: list[Any] = []
@@ -276,7 +287,7 @@ def continuity_rows(
         kept = [
             item
             for item in segments
-            if not (isinstance(item, dict) and item.get("segment") in _RETIRED_SEGMENTS)
+            if not (isinstance(item, dict) and item.get("segment") in retired)
         ]
     filtered = dict(baseline)
     filtered["segments"] = kept

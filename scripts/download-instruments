@@ -1,6 +1,6 @@
 #!/bin/sh
 # Usage: download-instruments <directory>
-# Writes <directory>/<broker>/YYYYMMDD for Firstock and Kite.
+# Writes <directory>/<broker>/YYYYMMDD for each broker in config/universe.toml.
 # A failed broker leaves that broker's previous snapshot in place.
 set -eu
 if [ "$#" -ne 1 ] || [ -z "$1" ]; then
@@ -9,15 +9,25 @@ if [ "$#" -ne 1 ] || [ -z "$1" ]; then
 fi
 out_root=$1
 repo=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-day=$(TZ=Asia/Kolkata date +%Y%m%d)
+export SCORCH_UNIVERSE="$repo/config/universe.toml"
 log=$out_root/download.log
 mkdir -p "$out_root"
 umask 022
 status=0
+scorch=$repo/.venv/bin/scorch
 {
   echo "$(date '+%Y-%m-%d %H:%M:%S %Z') start"
-  "$repo/.venv/bin/scorch" download-symbols --broker firstock --out "$out_root/firstock/$day" || status=1
-  "$repo/.venv/bin/scorch" download-symbols --broker kite --out "$out_root/kite/$day" || status=1
+  day=$("$scorch" calendar-day) || status=1
+  if [ "$status" -eq 0 ]; then
+    brokers=$("$scorch" list-brokers) || status=1
+  fi
+  if [ "$status" -eq 0 ]; then
+    for broker in $brokers; do
+      "$scorch" download-symbols \
+        --broker "$broker" \
+        --out "$out_root/$broker/$day" || status=1
+    done
+  fi
   echo "$(date '+%Y-%m-%d %H:%M:%S %Z') done status=$status"
 } >>"$log" 2>&1
 exit "$status"

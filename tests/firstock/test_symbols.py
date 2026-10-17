@@ -48,7 +48,13 @@ def _csv_bytes(
     for i in range(rows):
         row: list[str] = []
         for column in header:
-            if column in _NUMERIC:
+            if column == "LotSize":
+                row.append("1")
+            elif column == "FreezeQty":
+                row.append("0")
+            elif column == "StrikePrice":
+                row.append(str(i + 1))
+            elif column in _NUMERIC:
                 row.append("1.5")
             elif column == "Token":
                 row.append(token_at(i) if token_at else str(i + 1))
@@ -61,7 +67,7 @@ def _csv_bytes(
             elif column == "ISIN":
                 row.append(f"INE{i:09d}")
             elif column == "Symbol":
-                row.append(f"UND{i}")
+                row.append("SYM0")
             elif column == "Expiry":
                 row.append("29-SEP-2026")
             elif column == "Instrument":
@@ -220,7 +226,7 @@ def test_build_manifest() -> None:
         "uncovered": 0,
     }
     body = json.loads(build_manifest(book, overlaps, coverage, now=now, duration_ms=5))
-    assert body["schema_version"] == 3
+    assert body["schema_version"] == 5
     assert body["source"] == "firstock"
     assert body["downloaded_at"] == now.isoformat()
     assert body["calendar_day"] == "2026-08-30"
@@ -228,7 +234,7 @@ def test_build_manifest() -> None:
     assert body["dedup_key"] == ["exchange", "token"]
     assert body["filename"] == "instruments.csv"
     assert body["sha256"] == book["sha256"]
-    assert body["header"][0] == "exchange"
+    assert body["header"][0] == "key"
     assert body["overlaps"] == overlaps
     assert body["population"] == book["population"]
     assert body["indices_coverage"] == coverage
@@ -252,13 +258,13 @@ def test_download_all_writes_validated_csvs(
     assert [item["segment"] for item in manifest] == list(SEGMENTS)
     assert "GET" in caplog.text
     body = json.loads((tmp_path / "manifest.json").read_text())
-    assert body["schema_version"] == 3
+    assert body["schema_version"] == 5
     assert body["baseline"] is None
     assert body["dedup_key"] == ["exchange", "token"]
     assert body["filename"] == "instruments.csv"
     written = (tmp_path / "instruments.csv").read_bytes()
     assert body["sha256"] == hashlib.sha256(written).hexdigest()
-    assert written.startswith(b"exchange,token,trading_symbol,")
+    assert written.startswith(b"key,exchange,token,trading_symbol,")
     expected_rows = sum(
         spec["min_rows"] for name, spec in SEGMENTS.items() if name != "Indices"
     )

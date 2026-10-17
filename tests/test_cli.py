@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from scorch.cli import _configure_logging, kolkata_time, main
+from scorch.cli import _configure_logging, main, session_time
 from scorch.snapshot import DownloadError
 
 
@@ -91,9 +91,9 @@ def test_download_symbols_reports_oserror(
     assert "error: disk full" in capsys.readouterr().err
 
 
-def test_kolkata_time_is_india_standard_time() -> None:
+def test_session_time_uses_the_configured_zone() -> None:
     moment = datetime(2026, 8, 30, 20, 0, tzinfo=UTC)
-    converted = kolkata_time(moment.timestamp())
+    converted = session_time(moment.timestamp())
     assert converted.tm_year == 2026
     assert converted.tm_mon == 8
     assert converted.tm_mday == 31
@@ -101,7 +101,7 @@ def test_kolkata_time_is_india_standard_time() -> None:
     assert converted.tm_min == 30
 
 
-def test_configure_logging_stamps_stderr_in_kolkata() -> None:
+def test_configure_logging_stamps_stderr_in_the_session_zone() -> None:
     _configure_logging()
     stamped = [
         handler
@@ -112,4 +112,25 @@ def test_configure_logging_stamps_stderr_in_kolkata() -> None:
     ]
     assert stamped
     assert stamped[-1].formatter is not None
-    assert stamped[-1].formatter.converter is kolkata_time
+    assert stamped[-1].formatter.converter is session_time
+
+
+def test_broker_without_a_downloader_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("scorch.cli._downloaders", lambda: {"firstock": None})
+    code = main(["list-brokers"])
+    assert code == 1
+    assert "no downloader" in capsys.readouterr().err
+
+
+def test_list_brokers_prints_the_universe(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["list-brokers"]) == 0
+    assert capsys.readouterr().out.split() == ["firstock", "kite"]
+
+
+def test_calendar_day_prints_eight_digits(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["calendar-day"]) == 0
+    assert len(capsys.readouterr().out.strip()) == 8

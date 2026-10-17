@@ -5,9 +5,10 @@ Docs: https://firstock.in/api/docs/downloaders/
 
 The Indices file is index F&O only (FUTIDX/OPTIDX) and overlaps NFO+BFO.
 Spot indices (NIFTY, BANKNIFTY, SENSEX, ...) live in the NSE/BSE cash files.
-All five files are downloaded and validated. Indices rows must also appear in
-NFO or in BFO, and not in both. They are not written: the published file is
-the normalized instruments.csv, which already contains those contracts.
+Which of these files are fetched, and the row floors, come from the universe
+file. A segment with ``publish = false`` is validated and left out of
+instruments.csv. Indices rows must also appear in NFO or in BFO, and not in
+both. The cash files' spot indexes are the IDX rows derivatives point at.
 """
 
 from __future__ import annotations
@@ -36,13 +37,15 @@ from scorch.snapshot import (
     overlap_continuity,
     publish_snapshot,
 )
+from scorch.universe import ConfigError, Universe, universe
 
 BASE_URL = "https://api.firstock.in/V1/symbols"
 USER_AGENT = f"scorch-firstock-symbol-downloader/{__version__}"
-TIMEOUT_SECONDS = 60
-RETRIES = 3
-RETRY_BACKOFF_SECONDS = 2.0
-NUMERIC_COLUMNS = ("LotSize", "TickSize", "FreezeQty", "StrikePrice")
+_HTTP = universe().http
+TIMEOUT_SECONDS = _HTTP.timeout_seconds
+RETRIES = _HTTP.retries
+RETRY_BACKOFF_SECONDS = _HTTP.retry_backoff_seconds
+NUMERIC_COLUMNS = ("LotSize", "TickSize", "StrikePrice")
 
 logger = logging.getLogger(__name__)
 
@@ -84,85 +87,101 @@ class IndicesCoverage(TypedDict):
 
 
 # Expected header is the contract with Firstock. Fail the run if it drifts.
-# min_rows is a sanity floor near half the 2026-08-30 snapshot, so a short
-# file fails without treating that day's count as a permanent size.
-SEGMENTS: dict[str, SegmentSpec] = {
-    "NSE": {
-        "header": (
-            "Exchange",
-            "Token",
-            "LotSize",
-            "TradingSymbol",
-            "CompanyName",
-            "ISIN",
-            "TickSize",
-            "FreezeQty",
-        ),
-        "min_rows": 5000,
-    },
-    "BSE": {
-        "header": (
-            "Exchange",
-            "Token",
-            "LotSize",
-            "TradingSymbol",
-            "CompanyName",
-            "ISIN",
-            "TickSize",
-            "FreezeQty",
-        ),
-        "min_rows": 6000,
-    },
-    "NFO": {
-        "header": (
-            "Exchange",
-            "Token",
-            "LotSize",
-            "Symbol",
-            "TradingSymbol",
-            "CompanyName",
-            "Expiry",
-            "Instrument",
-            "OptionType",
-            "StrikePrice",
-            "TickSize",
-            "FreezeQty",
-        ),
-        "min_rows": 30000,
-    },
-    "BFO": {
-        "header": (
-            "Exchange",
-            "Token",
-            "LotSize",
-            "Symbol",
-            "TradingSymbol",
-            "CompanyName",
-            "Expiry",
-            "Instrument",
-            "OptionType",
-            "StrikePrice",
-            "TickSize",
-            "FreezeQty",
-        ),
-        "min_rows": 15000,
-    },
-    "Indices": {
-        "header": (
-            "Exchange",
-            "Token",
-            "LotSize",
-            "Symbol",
-            "TradingSymbol",
-            "Expiry",
-            "Instrument",
-            "OptionType",
-            "StrikePrice",
-            "TickSize",
-        ),
-        "min_rows": 8000,
-    },
+_HEADERS: dict[str, tuple[str, ...]] = {
+    "NSE": (
+        "Exchange",
+        "Token",
+        "LotSize",
+        "TradingSymbol",
+        "CompanyName",
+        "ISIN",
+        "TickSize",
+        "FreezeQty",
+    ),
+    "BSE": (
+        "Exchange",
+        "Token",
+        "LotSize",
+        "TradingSymbol",
+        "CompanyName",
+        "ISIN",
+        "TickSize",
+        "FreezeQty",
+    ),
+    "NFO": (
+        "Exchange",
+        "Token",
+        "LotSize",
+        "Symbol",
+        "TradingSymbol",
+        "CompanyName",
+        "Expiry",
+        "Instrument",
+        "OptionType",
+        "StrikePrice",
+        "TickSize",
+        "FreezeQty",
+    ),
+    "BFO": (
+        "Exchange",
+        "Token",
+        "LotSize",
+        "Symbol",
+        "TradingSymbol",
+        "CompanyName",
+        "Expiry",
+        "Instrument",
+        "OptionType",
+        "StrikePrice",
+        "TickSize",
+        "FreezeQty",
+    ),
+    "Indices": (
+        "Exchange",
+        "Token",
+        "LotSize",
+        "Symbol",
+        "TradingSymbol",
+        "Expiry",
+        "Instrument",
+        "OptionType",
+        "StrikePrice",
+        "TickSize",
+    ),
 }
+
+
+def configured_segments(book: Universe | None = None) -> dict[str, SegmentSpec]:
+    """Headers from this module, row floors from the universe file."""
+    loaded = universe() if book is None else book
+    broker = loaded.brokers.get("firstock")
+    if broker is None:
+        return {}
+    unknown = [name for name in broker.segments if name not in _HEADERS]
+    if unknown:
+        joined = ", ".join(unknown)
+        raise ConfigError(
+            f"{loaded.path}: firstock segment has no header in the downloader: {joined}"
+        )
+    missing = [
+        name
+        for name, limit in broker.segments.items()
+        if limit.publish and name not in loaded.exchanges
+    ]
+    if missing:
+        joined = ", ".join(missing)
+        raise ConfigError(
+            f"{loaded.path}: firstock segment is published but is not an exchange: "
+            f"{joined}"
+        )
+    return {
+        name: {"header": _HEADERS[name], "min_rows": limit.min_rows}
+        for name, limit in broker.segments.items()
+    }
+
+
+# Row floors come from the universe file. Tests shrink these copies.
+SEGMENTS: dict[str, SegmentSpec] = configured_segments()
 
 
 def segment_url(name: str) -> str:
@@ -373,7 +392,10 @@ def download_all(out_dir: Path, now: datetime | None = None) -> list[SegmentInfo
     normalized: list[dict[str, str]] = []
     for name, payload in payloads.items():
         normalized.extend(rows_from_firstock(name, payload))
-    book = build_book(normalized)
+    book = build_book(
+        normalized,
+        omit_without_spot=universe().brokers["firstock"].omit_without_spot,
+    )
     duration_ms = round((time.perf_counter() - started_all) * 1000)
     logger.info(
         "instruments.csv: %s rows, %s bytes, %sms",

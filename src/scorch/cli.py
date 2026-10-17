@@ -12,7 +12,20 @@ from pathlib import Path
 
 from scorch.firstock.symbols import download_symbols
 from scorch.kite.instruments import download_instruments
-from scorch.snapshot import EXCHANGE_TZ, DownloadError
+from scorch.snapshot import DownloadError, exchange_zone, session_stamp
+from scorch.universe import ConfigError, universe
+
+
+def _downloaders() -> dict[str, object]:
+    """Broker name to download function.
+
+    Built on each call so a test can replace either function. The universe
+    file chooses which of these run; it does not supply the vendor client.
+    """
+    return {
+        "firstock": download_symbols,
+        "kite": download_instruments,
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,15 +35,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
+    configured = tuple(universe().brokers)
+    known = _downloaders()
+    missing = [name for name in configured if name not in known]
+    if missing:
+        joined = ", ".join(missing)
+        raise ConfigError(f"universe broker has no downloader: {joined}")
+    brokers = configured
     download = sub.add_parser(
         "download-symbols",
-        help="Download a broker instrument master (Firstock or Kite).",
+        help="Download a broker instrument master.",
     )
     download.add_argument(
         "--broker",
-        choices=("firstock", "kite"),
+        choices=brokers,
         required=True,
-        help="Broker to download: firstock or kite.",
+        help=f"Broker to download: {', '.join(brokers)}.",
     )
     download.add_argument(
         "--out",
@@ -38,27 +58,35 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Directory to write. The directory name should be YYYYMMDD.",
     )
+    sub.add_parser(
+        "list-brokers",
+        help="Print the brokers in the universe file, one per line.",
+    )
+    sub.add_parser(
+        "calendar-day",
+        help="Print today's session date as YYYYMMDD.",
+    )
     return parser
 
 
-def kolkata_time(timestamp: float) -> time.struct_time:
-    """Format log timestamps on the exchange clock, not the host clock."""
-    return datetime.fromtimestamp(timestamp, EXCHANGE_TZ).timetuple()
+def session_time(timestamp: float) -> time.struct_time:
+    """Format log timestamps in the session timezone from the universe file."""
+    return datetime.fromtimestamp(timestamp, exchange_zone()).timetuple()
 
 
 _STDERR_HANDLER: logging.StreamHandler | None = None
 
 
 def _configure_logging() -> None:
-    """Send INFO logs to stderr with Asia/Kolkata timestamps.
+    """Send INFO logs to stderr with session-timezone timestamps.
 
     `basicConfig` does nothing once another library has installed a handler,
     which would leave the CLI on the host clock. This installs one handler
-    and keeps its clock on the exchange timezone.
+    and keeps its clock on the session timezone.
     """
     global _STDERR_HANDLER
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
-    formatter.converter = kolkata_time
+    formatter.converter = session_time
     root = logging.getLogger()
     if _STDERR_HANDLER is None or _STDERR_HANDLER.stream is not sys.stderr:
         if _STDERR_HANDLER is not None:
@@ -71,15 +99,21 @@ def _configure_logging() -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     _configure_logging()
-    parser = build_parser()
+    try:
+        parser = build_parser()
+    except ConfigError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     args = parser.parse_args(argv)
+    if args.command == "list-brokers":
+        for name in universe().brokers:
+            print(name)
+        return 0
+    if args.command == "calendar-day":
+        print(session_stamp())
+        return 0
     if args.command == "download-symbols":
-        if args.broker == "kite":
-            download = download_instruments
-        elif args.broker == "firstock":
-            download = download_symbols
-        else:
-            parser.error(f"unknown broker: {args.broker}")
+        download = _downloaders()[args.broker]
         try:
             out_dir = download(args.out)
         except (DownloadError, OSError) as error:

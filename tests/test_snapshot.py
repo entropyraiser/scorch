@@ -6,6 +6,7 @@ import fcntl
 import json
 import threading
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,13 @@ from scorch.snapshot import (
     load_baseline,
     overlap_continuity,
     publish_snapshot,
+    session_stamp,
 )
+
+
+def test_session_stamp_uses_the_configured_zone() -> None:
+    moment = datetime(2026, 8, 30, 20, 0, tzinfo=UTC)
+    assert session_stamp(moment) == "20260831"
 
 
 def test_publish_replaces_directory_and_cleans_up(tmp_path: Path) -> None:
@@ -201,6 +208,21 @@ def test_continuity_rows_ignores_the_retired_indices_file() -> None:
         "segments": [
             {"segment": "NSE", "rows": 10},
             {"segment": "Indices", "rows": 99},
+        ]
+    }
+    compared, current = continuity_rows(baseline, {"NSE": 10}, 10)
+    assert compared is not None
+    assert [item["segment"] for item in compared["segments"]] == ["NSE"]
+    deltas = continuity_check(compared, current)
+    assert [item["segment"] for item in deltas] == ["NSE"]
+
+
+def test_continuity_rows_ignores_exchanges_no_longer_published() -> None:
+    baseline = {
+        "segments": [
+            {"segment": "NSE", "rows": 10},
+            {"segment": "MCX", "rows": 40},
+            {"segment": "NCO", "rows": 20},
         ]
     }
     compared, current = continuity_rows(baseline, {"NSE": 10}, 10)

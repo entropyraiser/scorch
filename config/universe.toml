@@ -1,0 +1,229 @@
+# Trading universe for the instrument download.
+#
+# This is the policy: which exchanges are written, where a derivative's spot
+# lives, which brokers the morning job fetches, and the floors that reject a
+# short or drifting file. A broker that does not publish an exchange simply
+# has no rows for it. Listing an exchange here does not require every broker
+# to have it.
+#
+# Vendor column layouts and instrument-type maps stay in the downloader.
+# The instruments.csv columns and the key format stay in code; the trading
+# process reads that file as a fixed layout.
+#
+# Broker order is the order the morning job downloads them.
+# timezone and series are top-level keys, so they stay above the tables.
+
+timezone = "Asia/Kolkata"
+
+# Cash-symbol series suffixes. A hyphenated tail in this set is the series
+# (RELIANCE-EQ). Any other tail stays in the symbol and the series is EQ,
+# so BAJAJ-AUTO is not a series.
+series = [
+  "AK",
+  "AL",
+  "AM",
+  "AN",
+  "AZ",
+  "BA",
+  "BC",
+  "BE",
+  "BR",
+  "BS",
+  "BU",
+  "BV",
+  "BW",
+  "BX",
+  "BZ",
+  "D1",
+  "E1",
+  "EQ",
+  "GB",
+  "GS",
+  "IT",
+  "IV",
+  "MF",
+  "N0",
+  "N1",
+  "N2",
+  "N3",
+  "N4",
+  "N5",
+  "N6",
+  "N7",
+  "N8",
+  "N9",
+  "NA",
+  "NB",
+  "NC",
+  "ND",
+  "NE",
+  "NF",
+  "NG",
+  "NH",
+  "NI",
+  "NJ",
+  "NK",
+  "NL",
+  "NM",
+  "NN",
+  "NO",
+  "NP",
+  "NQ",
+  "NR",
+  "NS",
+  "NT",
+  "NU",
+  "NV",
+  "NW",
+  "NX",
+  "NY",
+  "NZ",
+  "RL",
+  "RR",
+  "SF",
+  "SG",
+  "SM",
+  "ST",
+  "SZ",
+  "TB",
+  "W1",
+  "Y0",
+  "Y1",
+  "Y2",
+  "Y3",
+  "Y4",
+  "Y5",
+  "Y6",
+  "Y7",
+  "Y8",
+  "Y9",
+  "YA",
+  "YB",
+  "YC",
+  "YD",
+  "YG",
+  "YH",
+  "YI",
+  "YJ",
+  "YK",
+  "YL",
+  "YM",
+  "YP",
+  "YQ",
+  "YR",
+  "YS",
+  "YT",
+  "YU",
+  "YV",
+  "YW",
+  "YX",
+  "YY",
+  "YZ",
+  "Z0",
+  "Z1",
+  "Z2",
+  "Z3",
+  "Z4",
+  "Z5",
+  "Z6",
+  "Z7",
+  "Z8",
+  "Z9",
+  "ZF",
+  "ZG",
+  "ZH",
+  "ZI",
+  "ZJ",
+  "ZK",
+  "ZL",
+  "ZM",
+  "ZN",
+  "ZO",
+  "ZP",
+  "ZQ",
+  "ZR",
+  "ZS",
+  "ZT",
+  "ZY",
+  "ZZ",
+]
+
+[http]
+timeout_seconds = 60
+retries = 3
+retry_backoff_seconds = 2.0
+
+[continuity]
+# 4000 basis points is 40%. A larger move in a segment's row count fails the run.
+max_relative_change_bp = 4000
+# Names older manifests counted. A move in one of these is not a failure.
+# None of these may also appear under exchanges.
+retired_segments = [
+  "Indices",
+  "MCX",
+  "NCO",
+  "CDS",
+  "BCD",
+  "GLOBAL",
+  "NSEIX",
+]
+
+# Display names with spaces removed, mapped to the derivative underlying.
+# The index row, the underlying, and spot_key then share one key across brokers.
+[index_aliases]
+NIFTY50 = "NIFTY"
+NIFTYBANK = "BANKNIFTY"
+NIFTYFINSERVICE = "FINNIFTY"
+NIFTYMIDSELECT = "MIDCPNIFTY"
+NIFTYNEXT50 = "NIFTYNXT50"
+NIFTYFPI150 = "NIFTYFPI"
+SNSX50 = "SENSEX50"
+BSEFOCUSEDIT = "FOCIT"
+
+# role is cash or derivative.
+# A derivative names the cash exchange that holds its spot, and may name a
+# second cash exchange used only when the home exchange does not list the stock.
+[exchanges.NSE]
+role = "cash"
+
+[exchanges.BSE]
+role = "cash"
+
+[exchanges.NFO]
+role = "derivative"
+spot = "NSE"
+spot_fallback = "BSE"
+
+[exchanges.BFO]
+role = "derivative"
+spot = "BSE"
+spot_fallback = "NSE"
+
+# omit_without_spot: underlyings this broker may drop when it publishes the
+# derivative and not the spot. Any other missing spot fails that broker's run.
+# A broker sets min_rows (one file, Kite) or segments (one file per entry,
+# Firstock), not both. min_rows is a floor near half of a known-good snapshot.
+# publish = false fetches the file for checks and leaves it out of instruments.csv.
+
+[brokers.firstock]
+omit_without_spot = ["FOCIT"]
+
+[brokers.firstock.segments.NSE]
+min_rows = 5000
+
+[brokers.firstock.segments.BSE]
+min_rows = 6000
+
+[brokers.firstock.segments.NFO]
+min_rows = 30000
+
+[brokers.firstock.segments.BFO]
+min_rows = 15000
+
+[brokers.firstock.segments.Indices]
+min_rows = 8000
+publish = false
+
+[brokers.kite]
+min_rows = 50000
+omit_without_spot = []

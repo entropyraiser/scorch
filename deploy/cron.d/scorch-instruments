@@ -1,4 +1,5 @@
 # Daily instrument masters, 08:00 Asia/Kolkata, before the NSE/BSE open.
+# CRON_TZ matches timezone in config/universe.toml.
 # Install with: crontab deploy/cron.d/scorch-instruments
 # The last field is the directory. Scorch has no default location.
 CRON_TZ=Asia/Kolkata

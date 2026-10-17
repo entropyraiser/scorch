@@ -41,6 +41,8 @@ def _csv_bytes(header: list[str], rows: int) -> bytes:
         for column in header:
             if column == "strike":
                 row.append("0")
+            elif column == "lot_size":
+                row.append("1")
             elif column in _NUMERIC:
                 row.append("1.5")
             elif column in {"instrument_token", "exchange_token"}:
@@ -179,7 +181,7 @@ def test_build_manifest() -> None:
     now = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
     book = build_book(rows_from_kite(_csv_bytes(list(HEADER), 2)))
     body = json.loads(build_manifest(book, now=now, duration_ms=5))
-    assert body["schema_version"] == 3
+    assert body["schema_version"] == 5
     assert body["source"] == "kite"
     assert body["downloaded_at"] == now.isoformat()
     assert body["calendar_day"] == "2026-08-30"
@@ -204,14 +206,14 @@ def test_download_instruments_writes_csv_and_manifest(
     out = download_instruments(tmp_path)
     assert out == tmp_path
     written = (tmp_path / "instruments.csv").read_bytes()
-    assert written.startswith(b"exchange,token,trading_symbol,")
+    assert written.startswith(b"key,exchange,token,trading_symbol,")
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     assert manifest["source"] == "kite"
     assert manifest["rows"] == 2
     assert manifest["segments"] == [{"segment": "NSE", "rows": 2}]
     assert manifest["sha256"] == hashlib.sha256(written).hexdigest()
     assert manifest["duration_ms"] >= 0
-    assert manifest["schema_version"] == 3
+    assert manifest["schema_version"] == 5
     assert manifest["dedup_key"] == ["exchange", "token"]
     assert manifest["baseline"] is None
     assert manifest["population"][0]["zero_tick_rows"] == 0
